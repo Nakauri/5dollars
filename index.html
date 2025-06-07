@@ -464,10 +464,12 @@
             });
         });
 
-        // Initialize
+        // Initialize and auto-refresh
         document.addEventListener('DOMContentLoaded', function() {
             updateStats();
-            setInterval(updateStats, 15 * 60 * 1000);
+            
+            // Refresh every 5 minutes to catch new data
+            setInterval(updateStats, 5 * 60 * 1000);
         });
     </script>
 </body>
