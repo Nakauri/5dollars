@@ -33,30 +33,37 @@ function httpsRequest(url, options = {}) {
     });
 }
 
-async function getAccessToken() {
-    const postData = querystring.stringify({
-        grant_type: 'refresh_token',
-        refresh_token: REFRESH_TOKEN
-    });
+async function getAccessToken(retryCount = 0) {
+    const maxRetries = 3;
+    
+    // Try with manual URL encoding instead of querystring
+    const postData = `grant_type=refresh_token&refresh_token=${encodeURIComponent(REFRESH_TOKEN)}`;
     
     const options = {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Content-Length': Buffer.byteLength(postData)
+            'Content-Length': Buffer.byteLength(postData),
+            'Accept': 'application/json',
+            'User-Agent': 'Portfolio-Tracker/1.0'
         },
         body: postData
     };
     
-    console.log('Making token request to Questrade...');
+    console.log(`Making token request to Questrade... (attempt ${retryCount + 1}/${maxRetries + 1})`);
     console.log('Refresh token (first 10 chars):', REFRESH_TOKEN?.substring(0, 10) + '...');
+    console.log('Post data:', postData.replace(REFRESH_TOKEN, 'HIDDEN_TOKEN'));
     
     try {
         const response = await httpsRequest('https://login.questrade.com/oauth2/token', options);
         console.log('Raw response received:', typeof response === 'string' ? response : JSON.stringify(response, null, 2));
         
         if (typeof response === 'string') {
-            // If it's a string, try to parse it as JSON
+            // Check for Cloudflare errors
+            if (response.includes('error code: 524') || response.includes('error code: 522')) {
+                throw new Error(`Cloudflare timeout (${response.trim()})`);
+            }
+            
             try {
                 const parsed = JSON.parse(response);
                 return parsed;
@@ -76,7 +83,20 @@ async function getAccessToken() {
         
         return response;
     } catch (error) {
-        console.error('Token request failed:', error.message);
+        console.error(`Token request failed (attempt ${retryCount + 1}):`, error.message);
+        
+        // Retry on network/timeout errors
+        if (retryCount < maxRetries && (
+            error.message.includes('524') || 
+            error.message.includes('522') || 
+            error.message.includes('timeout') ||
+            error.message.includes('ECONNRESET')
+        )) {
+            console.log(`Retrying in ${(retryCount + 1) * 2} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
+            return getAccessToken(retryCount + 1);
+        }
+        
         throw error;
     }
 }
@@ -139,6 +159,15 @@ async function main() {
     try {
         if (!REFRESH_TOKEN) {
             throw new Error('QUESTRADE_REFRESH_TOKEN environment variable not set');
+        }
+        
+        // First, test basic connectivity to Questrade
+        console.log('Testing basic connectivity to Questrade...');
+        try {
+            const testResponse = await httpsRequest('https://www.questrade.com/api/documentation', {});
+            console.log('Basic connectivity test: PASSED');
+        } catch (error) {
+            console.log('Basic connectivity test: FAILED -', error.message);
         }
         
         console.log('Getting access token...');
