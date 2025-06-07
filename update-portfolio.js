@@ -12,13 +12,17 @@ function httpsRequest(url, options = {}) {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                try {
-                    const parsed = JSON.parse(data);
-                    resolve(parsed);
-                } catch (e) {
-                    console.error('Failed to parse response:', data);
-                    reject(new Error('Invalid JSON response'));
+                console.log(`Response status: ${res.statusCode}`);
+                console.log(`Response headers:`, res.headers);
+                console.log(`Raw response data:`, data);
+                
+                if (res.statusCode >= 400) {
+                    reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+                    return;
                 }
+                
+                // Always return the raw data, let the caller decide how to parse it
+                resolve(data);
             });
         });
         req.on('error', reject);
@@ -45,19 +49,36 @@ async function getAccessToken() {
     };
     
     console.log('Making token request to Questrade...');
-    const response = await httpsRequest('https://login.questrade.com/oauth2/token', options);
+    console.log('Refresh token (first 10 chars):', REFRESH_TOKEN?.substring(0, 10) + '...');
     
-    console.log('Token response received');
-    if (response.error) {
-        throw new Error(`Token error: ${response.error_description || response.error}`);
+    try {
+        const response = await httpsRequest('https://login.questrade.com/oauth2/token', options);
+        console.log('Raw response received:', typeof response === 'string' ? response : JSON.stringify(response, null, 2));
+        
+        if (typeof response === 'string') {
+            // If it's a string, try to parse it as JSON
+            try {
+                const parsed = JSON.parse(response);
+                return parsed;
+            } catch (e) {
+                console.error('Response is not valid JSON:', response);
+                throw new Error(`Invalid response from Questrade: ${response}`);
+            }
+        }
+        
+        if (response.error) {
+            throw new Error(`Token error: ${response.error_description || response.error}`);
+        }
+        
+        if (!response.api_server) {
+            throw new Error('No api_server in token response');
+        }
+        
+        return response;
+    } catch (error) {
+        console.error('Token request failed:', error.message);
+        throw error;
     }
-    
-    if (!response.api_server) {
-        console.error('Full token response:', JSON.stringify(response, null, 2));
-        throw new Error('No api_server in token response');
-    }
-    
-    return response;
 }
 
 async function getPortfolioData(apiServer, accessToken) {
