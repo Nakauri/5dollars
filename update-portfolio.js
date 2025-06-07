@@ -1,10 +1,10 @@
 const fs = require('fs');
 const https = require('https');
-const querystring = require('querystring');
 
 // Configuration
 const REFRESH_TOKEN = process.env.QUESTRADE_REFRESH_TOKEN;
 const START_DATE = new Date(process.env.CHALLENGE_START_DATE || '2025-06-07');
+const PROXY_URL = process.env.PROXY_URL || 'https://questrade-proxy.vercel.app';
 
 function httpsRequest(url, options = {}) {
     return new Promise((resolve, reject) => {
@@ -12,16 +12,10 @@ function httpsRequest(url, options = {}) {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                console.log(`Response status: ${res.statusCode}`);
-                console.log(`Response headers:`, res.headers);
-                console.log(`Raw response data:`, data);
-                
                 if (res.statusCode >= 400) {
                     reject(new Error(`HTTP ${res.statusCode}: ${data}`));
                     return;
                 }
-                
-                // Always return the raw data, let the caller decide how to parse it
                 resolve(data);
             });
         });
@@ -33,84 +27,76 @@ function httpsRequest(url, options = {}) {
     });
 }
 
-async function getAccessToken(retryCount = 0) {
-    const maxRetries = 3;
+async function getAccessToken() {
+    console.log('Getting access token via proxy...');
     
-    // Try with manual URL encoding instead of querystring
-    const postData = `grant_type=refresh_token&refresh_token=${encodeURIComponent(REFRESH_TOKEN)}`;
+    const requestBody = JSON.stringify({
+        action: 'getToken',
+        refreshToken: REFRESH_TOKEN
+    });
     
     const options = {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Content-Length': Buffer.byteLength(postData),
-            'Accept': 'application/json',
-            'User-Agent': 'Portfolio-Tracker/1.0'
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(requestBody)
         },
-        body: postData
+        body: requestBody
     };
     
-    console.log(`Making token request to Questrade... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-    console.log('Refresh token (first 10 chars):', REFRESH_TOKEN?.substring(0, 10) + '...');
-    console.log('Post data:', postData.replace(REFRESH_TOKEN, 'HIDDEN_TOKEN'));
+    try {
+        const response = await httpsRequest(`${PROXY_URL}/api/questrade-proxy`, options);
+        const data = JSON.parse(response);
+        
+        if (data.error) {
+            throw new Error(`Proxy error: ${data.error} - ${data.details}`);
+        }
+        
+        console.log('Token received via proxy successfully');
+        return data;
+    } catch (error) {
+        console.error('Proxy token request failed:', error.message);
+        throw error;
+    }
+}
+
+async function makeApiCall(apiServer, accessToken, endpoint) {
+    console.log(`Making API call via proxy: ${endpoint}`);
+    
+    const requestBody = JSON.stringify({
+        action: 'apiCall',
+        apiServer: apiServer,
+        accessToken: accessToken,
+        endpoint: endpoint
+    });
+    
+    const options = {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(requestBody)
+        },
+        body: requestBody
+    };
     
     try {
-        const response = await httpsRequest('https://login.questrade.com/oauth2/token', options);
-        console.log('Raw response received:', typeof response === 'string' ? response : JSON.stringify(response, null, 2));
+        const response = await httpsRequest(`${PROXY_URL}/api/questrade-proxy`, options);
+        const data = JSON.parse(response);
         
-        if (typeof response === 'string') {
-            // Check for Cloudflare errors
-            if (response.includes('error code: 524') || response.includes('error code: 522')) {
-                throw new Error(`Cloudflare timeout (${response.trim()})`);
-            }
-            
-            try {
-                const parsed = JSON.parse(response);
-                return parsed;
-            } catch (e) {
-                console.error('Response is not valid JSON:', response);
-                throw new Error(`Invalid response from Questrade: ${response}`);
-            }
+        if (data.error) {
+            throw new Error(`API call error: ${data.error} - ${data.details}`);
         }
         
-        if (response.error) {
-            throw new Error(`Token error: ${response.error_description || response.error}`);
-        }
-        
-        if (!response.api_server) {
-            throw new Error('No api_server in token response');
-        }
-        
-        return response;
+        return data;
     } catch (error) {
-        console.error(`Token request failed (attempt ${retryCount + 1}):`, error.message);
-        
-        // Retry on network/timeout errors
-        if (retryCount < maxRetries && (
-            error.message.includes('524') || 
-            error.message.includes('522') || 
-            error.message.includes('timeout') ||
-            error.message.includes('ECONNRESET')
-        )) {
-            console.log(`Retrying in ${(retryCount + 1) * 2} seconds...`);
-            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
-            return getAccessToken(retryCount + 1);
-        }
-        
+        console.error(`API call failed for ${endpoint}:`, error.message);
         throw error;
     }
 }
 
 async function getPortfolioData(apiServer, accessToken) {
-    console.log(`Using API server: ${apiServer}`);
-    
     // Get accounts
-    const accountsUrl = `${apiServer}/v1/accounts`;
-    console.log(`Fetching accounts from: ${accountsUrl}`);
-    
-    const accounts = await httpsRequest(accountsUrl, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    const accounts = await makeApiCall(apiServer, accessToken, '/v1/accounts');
     
     if (!accounts.accounts || accounts.accounts.length === 0) {
         throw new Error('No accounts found');
@@ -119,17 +105,11 @@ async function getPortfolioData(apiServer, accessToken) {
     const accountId = accounts.accounts[0].number;
     console.log(`Using account ID: ${accountId}`);
     
-    // Get positions
-    const positionsUrl = `${apiServer}/v1/accounts/${accountId}/positions`;
-    const positions = await httpsRequest(positionsUrl, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-    
-    // Get account balances
-    const balancesUrl = `${apiServer}/v1/accounts/${accountId}/balances`;
-    const balances = await httpsRequest(balancesUrl, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    // Get positions and balances
+    const [positions, balances] = await Promise.all([
+        makeApiCall(apiServer, accessToken, `/v1/accounts/${accountId}/positions`),
+        makeApiCall(apiServer, accessToken, `/v1/accounts/${accountId}/balances`)
+    ]);
     
     return { 
         positions: positions.positions || [], 
@@ -161,18 +141,13 @@ async function main() {
             throw new Error('QUESTRADE_REFRESH_TOKEN environment variable not set');
         }
         
-        // First, test basic connectivity to Questrade
-        console.log('Testing basic connectivity to Questrade...');
-        try {
-            const testResponse = await httpsRequest('https://www.questrade.com/api/documentation', {});
-            console.log('Basic connectivity test: PASSED');
-        } catch (error) {
-            console.log('Basic connectivity test: FAILED -', error.message);
+        if (!PROXY_URL || PROXY_URL === 'YOUR_VERCEL_URL_HERE') {
+            throw new Error('PROXY_URL environment variable not set');
         }
         
-        console.log('Getting access token...');
-        const tokenData = await getAccessToken();
+        console.log('Using proxy URL:', PROXY_URL);
         
+        const tokenData = await getAccessToken();
         console.log('Fetching portfolio data...');
         const portfolioData = await getPortfolioData(tokenData.api_server, tokenData.access_token);
         
@@ -220,9 +195,9 @@ async function main() {
         
         console.log('Portfolio data updated successfully!');
         console.log(`Days invested: ${daysInvested}`);
-        console.log(`Total invested: ${totalInvested}`);
-        console.log(`Current value: ${currentValue.toFixed(2)}`);
-        console.log(`Gains: ${grossGains.toFixed(2)}`);
+        console.log(`Total invested: $${totalInvested}`);
+        console.log(`Current value: $${currentValue.toFixed(2)}`);
+        console.log(`Gains: $${grossGains.toFixed(2)}`);
         
     } catch (error) {
         console.error('Error updating portfolio:', error);
