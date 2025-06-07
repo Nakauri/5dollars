@@ -1,5 +1,6 @@
 const fs = require('fs');
 const https = require('https');
+const querystring = require('querystring');
 
 // Configuration
 const REFRESH_TOKEN = process.env.QUESTRADE_REFRESH_TOKEN;
@@ -12,9 +13,11 @@ function httpsRequest(url, options = {}) {
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
                 try {
-                    resolve(JSON.parse(data));
+                    const parsed = JSON.parse(data);
+                    resolve(parsed);
                 } catch (e) {
-                    resolve(data);
+                    console.error('Failed to parse response:', data);
+                    reject(new Error('Invalid JSON response'));
                 }
             });
         });
@@ -27,29 +30,53 @@ function httpsRequest(url, options = {}) {
 }
 
 async function getAccessToken() {
-    const url = 'https://login.questrade.com/oauth2/token';
-    const body = `grant_type=refresh_token&refresh_token=${REFRESH_TOKEN}`;
+    const postData = querystring.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: REFRESH_TOKEN
+    });
     
-    const response = await httpsRequest(url, {
+    const options = {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Content-Length': Buffer.byteLength(body)
+            'Content-Length': Buffer.byteLength(postData)
         },
-        body: body
-    });
+        body: postData
+    };
+    
+    console.log('Making token request to Questrade...');
+    const response = await httpsRequest('https://login.questrade.com/oauth2/token', options);
+    
+    console.log('Token response received');
+    if (response.error) {
+        throw new Error(`Token error: ${response.error_description || response.error}`);
+    }
+    
+    if (!response.api_server) {
+        console.error('Full token response:', JSON.stringify(response, null, 2));
+        throw new Error('No api_server in token response');
+    }
     
     return response;
 }
 
 async function getPortfolioData(apiServer, accessToken) {
+    console.log(`Using API server: ${apiServer}`);
+    
     // Get accounts
     const accountsUrl = `${apiServer}/v1/accounts`;
+    console.log(`Fetching accounts from: ${accountsUrl}`);
+    
     const accounts = await httpsRequest(accountsUrl, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     
+    if (!accounts.accounts || accounts.accounts.length === 0) {
+        throw new Error('No accounts found');
+    }
+    
     const accountId = accounts.accounts[0].number;
+    console.log(`Using account ID: ${accountId}`);
     
     // Get positions
     const positionsUrl = `${apiServer}/v1/accounts/${accountId}/positions`;
@@ -63,10 +90,15 @@ async function getPortfolioData(apiServer, accessToken) {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     
-    return { positions: positions.positions, balances: balances.combinedBalances };
+    return { 
+        positions: positions.positions || [], 
+        balances: balances.combinedBalances || []
+    };
 }
 
 function calculateTaxes(grossGains) {
+    if (grossGains <= 0) return { totalTax: 0, effectiveRate: 0 };
+    
     const capitalGainsRate = 0.2675; // 26.75%
     const dividendRate = 0.0581; // 5.81%
     
@@ -84,19 +116,19 @@ function calculateTaxes(grossGains) {
 
 async function main() {
     try {
+        if (!REFRESH_TOKEN) {
+            throw new Error('QUESTRADE_REFRESH_TOKEN environment variable not set');
+        }
+        
         console.log('Getting access token...');
         const tokenData = await getAccessToken();
-        
-        if (tokenData.error) {
-            throw new Error(`Token error: ${tokenData.error_description}`);
-        }
         
         console.log('Fetching portfolio data...');
         const portfolioData = await getPortfolioData(tokenData.api_server, tokenData.access_token);
         
         // Calculate challenge metrics
         const now = new Date();
-        const daysInvested = Math.floor((now - START_DATE) / (1000 * 60 * 60 * 24));
+        const daysInvested = Math.max(0, Math.floor((now - START_DATE) / (1000 * 60 * 60 * 24)));
         const totalInvested = daysInvested * 5;
         
         // Find XEQT position
@@ -106,11 +138,15 @@ async function main() {
             averageEntryPrice: 0
         };
         
-        const currentValue = portfolioData.balances[0]?.totalEquity || xeqtPosition.currentMarketValue;
+        // Use total equity from balances, fallback to XEQT position value
+        const currentValue = portfolioData.balances.length > 0 ? 
+            portfolioData.balances[0].totalEquity || 0 : 
+            xeqtPosition.currentMarketValue;
+            
         const grossGains = currentValue - totalInvested;
         
         // Calculate taxes
-        const taxes = grossGains > 0 ? calculateTaxes(grossGains) : { totalTax: 0, effectiveRate: 0 };
+        const taxes = calculateTaxes(grossGains);
         const afterTaxValue = currentValue - taxes.totalTax;
         const afterTaxGains = afterTaxValue - totalInvested;
         
@@ -119,10 +155,10 @@ async function main() {
             lastUpdated: now.toISOString(),
             daysInvested: daysInvested,
             totalInvested: totalInvested,
-            currentValue: Math.round(currentValue),
-            grossGains: Math.round(grossGains),
-            afterTaxValue: Math.round(afterTaxValue),
-            afterTaxGains: Math.round(afterTaxGains),
+            currentValue: Math.round(currentValue * 100) / 100,
+            grossGains: Math.round(grossGains * 100) / 100,
+            afterTaxValue: Math.round(afterTaxValue * 100) / 100,
+            afterTaxGains: Math.round(afterTaxGains * 100) / 100,
             effectiveTaxRate: Math.round(taxes.effectiveRate * 100) / 100,
             xeqtShares: xeqtPosition.openQuantity,
             xeqtAvgPrice: xeqtPosition.averageEntryPrice,
@@ -134,15 +170,16 @@ async function main() {
         
         console.log('Portfolio data updated successfully!');
         console.log(`Days invested: ${daysInvested}`);
-        console.log(`Current value: $${currentValue.toLocaleString()}`);
-        console.log(`Gains: $${grossGains.toLocaleString()}`);
+        console.log(`Total invested: ${totalInvested}`);
+        console.log(`Current value: ${currentValue.toFixed(2)}`);
+        console.log(`Gains: ${grossGains.toFixed(2)}`);
         
     } catch (error) {
         console.error('Error updating portfolio:', error);
         
         // Create fallback data if API fails
         const now = new Date();
-        const daysInvested = Math.floor((now - START_DATE) / (1000 * 60 * 60 * 24));
+        const daysInvested = Math.max(0, Math.floor((now - START_DATE) / (1000 * 60 * 60 * 24)));
         const totalInvested = daysInvested * 5;
         
         const fallbackData = {
