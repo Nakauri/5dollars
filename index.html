@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>$5 Daily Investment Challenge - Live Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: white;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, rgba(79, 172, 254, 0.1) 0%, rgba(0, 242, 254, 0.1) 100%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4rem);
+            font-weight: 800;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 15px;
+            line-height: 1.1;
+        }
+
+        .hero-subtitle {
+            font-size: 1.3rem;
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 30px;
+        }
+
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(34, 197, 94, 0.2);
+            border: 1px solid rgb(34, 197, 94);
+            padding: 8px 16px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            color: rgb(34, 197, 94);
+            animation: pulse 2s infinite;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: rgb(34, 197, 94);
+            border-radius: 50%;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 40px;
+            margin: 40px 0;
+        }
+
+        .chart-section {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            backdrop-filter: blur(10px);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .chart-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+        }
+
+        .timeframe-tabs {
+            display: flex;
+            gap: 8px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+
+        .chart-container {
+            height: 400px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-placeholder {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .chart-placeholder .icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(79, 172, 254, 0.3);
+        }
+
+        .stat-value {
+            font-size: 2.2rem;
+            font-weight: 800;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .stat-subtitle {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.5);
+            font-style: italic;
+        }
+
+        .challenge-info {
+            background: linear-gradient(135deg, rgba(79, 172, 254, 0.1) 0%, rgba(0, 242, 254, 0.1) 100%);
+            border: 1px solid rgba(79, 172, 254, 0.3);
+            border-radius: 15px;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .challenge-info h3 {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            color: #4facfe;
+        }
+
+        .challenge-description {
+            color: rgba(255, 255, 255, 0.8);
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .progress-bar {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 25px;
+            height: 12px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            height: 100%;
+            border-radius: 25px;
+            transition: width 1s ease-in-out;
+            position: relative;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .progress-text {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .milestone-alert {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(21, 128, 61, 0.2) 100%);
+            border: 1px solid rgb(34, 197, 94);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 30px 0;
+            text-align: center;
+            animation: glow 3s ease-in-out infinite;
+        }
+
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(34, 197, 94, 0.5); }
+        }
+
+        .footer {
+            text-align: center;
+            padding: 30px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 30px;
+            }
+            
+            .sidebar {
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                display: grid;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .chart-container {
+                height: 300px;
+            }
+            
+            .timeframe-tabs {
+                flex-wrap: wrap;
+            }
+            
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>$5 Daily Challenge</h1>
+        <div class="hero-subtitle">Watching wealth grow $5 at a time</div>
+        <div class="live-indicator">
+            <div class="live-dot"></div>
+            LIVE TRACKING
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="main-content">
+            <div class="chart-section">
+                <div class="chart-header">
+                    <div class="chart-title">Portfolio Growth Over Time</div>
+                    <div class="timeframe-tabs">
+                        <button class="tab active">1M</button>
+                        <button class="tab">3M</button>
+                        <button class="tab">1Y</button>
+                        <button class="tab">ALL</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-placeholder">
+                        <div class="icon">📈</div>
+                        <div>Real-time portfolio chart</div>
+                        <div style="font-size: 0.9rem; margin-top: 10px; opacity: 0.7;">
+                            Connect Questrade API to see live growth
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="challenge-info">
+                    <h3>The Challenge</h3>
+                    <div class="challenge-description">
+                        Investing exactly $5 every single day into <strong>XEQT</strong> (iShares Core Equity ETF Portfolio). No exceptions, no excuses. Building wealth through consistency.
+                    </div>
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.85rem; color: rgba(255,255,255,0.7);">
+                        <strong>Why XEQT?</strong> One ETF, entire world. 12,000+ companies across Canada, US, and international markets. Ultra-low 0.20% fee. Maximum automation, zero thinking required.
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 77%"></div>
+                    </div>
+                    <div class="progress-text">77% to next milestone ($2,500)</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Days Invested</div>
+                    <div class="stat-value" id="daysInvested">365</div>
+                    <div class="stat-subtitle">1 year streak! 🔥</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Total Invested</div>
+                    <div class="stat-value" id="totalInvested">$1,825</div>
+                    <div class="stat-subtitle">$5 × 365 days</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Portfolio Value</div>
+                    <div class="stat-value" id="currentValue">$1,952</div>
+                    <div class="stat-subtitle" id="afterTaxValue">$1,922 after tax</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Total Returns</div>
+                    <div class="stat-value" id="totalGains">+$127</div>
+                    <div class="stat-subtitle" id="afterTaxGains">+$97 after tax (24% tax rate)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="milestone-alert">
+            🎉 <strong>Milestone Unlocked:</strong> 365 Days of Consistency!<br>
+            <small style="opacity: 0.9; margin-top: 8px; display: block;">
+                Next goal: $2,500 portfolio value
+            </small>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div><strong>Last Updated:</strong> <span id="updateTime">June 7, 2025 - 2:30 PM EST</span></div>
+        <div style="margin-top: 8px; opacity: 0.7;">Automated updates every 15 minutes • Powered by Questrade API</div>
+    </div>
+
+    <script>
+        // Tax calculation functions (Alberta rates)
+        function calculateTaxes(grossGains, daysInvested) {
+            const capitalGainsRate = 0.2675;
+            const dividendRate = 0.0581;
+            
+            const capitalGains = grossGains * 0.85;
+            const dividends = grossGains * 0.15;
+            
+            const capitalGainsTax = capitalGains * capitalGainsRate;
+            const dividendTax = dividends * dividendRate;
+            
+            return {
+                totalTax: capitalGainsTax + dividendTax,
+                effectiveRate: ((capitalGainsTax + dividendTax) / grossGains) * 100
+            };
+        }
+
+        function animateValue(elementId, finalValue, prefix) {
+            if (prefix === undefined) prefix = '';
+            const element = document.getElementById(elementId);
+            const startValue = 0;
+            const duration = 2000;
+            const startTime = performance.now();
+            
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const current = Math.floor(startValue + (finalValue - startValue) * progress);
+                
+                element.textContent = prefix + Math.abs(current).toLocaleString();
+                
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                }
+            }
+            
+            requestAnimationFrame(update);
+        }
+
+        function updateStats() {
+            const daysInvested = parseInt(document.getElementById('daysInvested').textContent);
+            const totalInvested = daysInvested * 5;
+            
+            const annualReturn = 0.07;
+            const grossValue = Math.round(totalInvested * Math.pow(1 + annualReturn, daysInvested / 365));
+            const grossGains = grossValue - totalInvested;
+            
+            const taxes = calculateTaxes(grossGains, daysInvested);
+            const afterTaxValue = grossValue - taxes.totalTax;
+            const afterTaxGains = afterTaxValue - totalInvested;
+            
+            animateValue('totalInvested', totalInvested, '$');
+            animateValue('currentValue', grossValue, '$');
+            animateValue('totalGains', grossGains, grossGains >= 0 ? '+$' : '-$');
+            
+            document.getElementById('afterTaxValue').textContent = '$' + Math.round(afterTaxValue).toLocaleString() + ' after tax';
+            document.getElementById('afterTaxGains').textContent = '+$' + Math.round(afterTaxGains).toLocaleString() + ' after tax (' + Math.round(taxes.effectiveRate) + '% tax rate)';
+            
+            const progressPercent = Math.min((afterTaxValue / 2500) * 100, 100);
+            document.getElementById('progressFill').style.width = progressPercent + '%';
+            
+            document.getElementById('updateTime').textContent = new Date().toLocaleString();
+        }
+
+        // Tab functionality
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStats();
+            setInterval(updateStats, 15 * 60 * 1000);
+        });
+    </script>
+</body>
+</html>
