@@ -347,66 +347,64 @@
                         <strong>Why XEQT?</strong> One ETF, entire world. 12,000+ companies across Canada, US, and international markets. Ultra-low 0.20% fee. Maximum automation, zero thinking required.
                     </div>
                     <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill" style="width: 77%"></div>
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
                     </div>
-                    <div class="progress-text">77% to next milestone ($2,500)</div>
+                    <div class="progress-text">Challenge hasn't started yet - add $5 daily!</div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-label">Days Invested</div>
-                    <div class="stat-value" id="daysInvested">365</div>
-                    <div class="stat-subtitle">1 year streak! 🔥</div>
+                    <div class="stat-value" id="daysInvested">0</div>
+                    <div class="stat-subtitle">Ready to start! 🚀</div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-label">Total Invested</div>
-                    <div class="stat-value" id="totalInvested">$1,825</div>
-                    <div class="stat-subtitle">$5 × 365 days</div>
+                    <div class="stat-value" id="totalInvested">$0</div>
+                    <div class="stat-subtitle">$5 × 0 days</div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-label">Portfolio Value</div>
-                    <div class="stat-value" id="currentValue">$1,952</div>
-                    <div class="stat-subtitle" id="afterTaxValue">$1,922 after tax</div>
+                    <div class="stat-value" id="currentValue">$0</div>
+                    <div class="stat-subtitle" id="afterTaxValue">$0 after tax</div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-label">Total Returns</div>
-                    <div class="stat-value" id="totalGains">+$127</div>
-                    <div class="stat-subtitle" id="afterTaxGains">+$97 after tax (24% tax rate)</div>
+                    <div class="stat-value" id="totalGains">$0</div>
+                    <div class="stat-subtitle" id="afterTaxGains">$0 after tax (0% tax rate)</div>
                 </div>
             </div>
-        </div>
-
-        <div class="milestone-alert">
-            🎉 <strong>Milestone Unlocked:</strong> 365 Days of Consistency!<br>
-            <small style="opacity: 0.9; margin-top: 8px; display: block;">
-                Next goal: $2,500 portfolio value
-            </small>
         </div>
     </div>
 
     <div class="footer">
-        <div><strong>Last Updated:</strong> <span id="updateTime">June 7, 2025 - 2:30 PM EST</span></div>
-        <div style="margin-top: 8px; opacity: 0.7;">Automated updates every 15 minutes • Powered by Questrade API</div>
+        <div><strong>Last Updated:</strong> <span id="updateTime">Loading...</span></div>
+        <div style="margin-top: 8px; opacity: 0.7;">Manual updates • Ready for your first $5 investment!</div>
     </div>
 
     <script>
-        // Tax calculation functions (Alberta rates)
-        function calculateTaxes(grossGains, daysInvested) {
-            const capitalGainsRate = 0.2675;
-            const dividendRate = 0.0581;
-            
-            const capitalGains = grossGains * 0.85;
-            const dividends = grossGains * 0.15;
-            
-            const capitalGainsTax = capitalGains * capitalGainsRate;
-            const dividendTax = dividends * dividendRate;
-            
-            return {
-                totalTax: capitalGainsTax + dividendTax,
-                effectiveRate: ((capitalGainsTax + dividendTax) / grossGains) * 100
-            };
+        async function loadPortfolioData() {
+            try {
+                const response = await fetch('./portfolio-data.json');
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.log('Could not load portfolio data, using default values');
+                return {
+                    daysInvested: 0,
+                    totalInvested: 0,
+                    currentValue: 0,
+                    grossGains: 0,
+                    afterTaxValue: 0,
+                    afterTaxGains: 0,
+                    effectiveTaxRate: 0,
+                    progressToGoal: 0,
+                    lastUpdated: new Date().toISOString(),
+                    note: "Challenge hasn't started yet - add $5 daily!"
+                };
+            }
         }
 
         function animateValue(elementId, finalValue, prefix) {
@@ -431,32 +429,33 @@
             requestAnimationFrame(update);
         }
 
-        function updateStats() {
-            const daysInvested = parseInt(document.getElementById('daysInvested').textContent);
-            const totalInvested = daysInvested * 5;
+        async function updateStats() {
+            const data = await loadPortfolioData();
             
-            const annualReturn = 0.07;
-            const grossValue = Math.round(totalInvested * Math.pow(1 + annualReturn, daysInvested / 365));
-            const grossGains = grossValue - totalInvested;
+            animateValue('daysInvested', data.daysInvested, '');
+            animateValue('totalInvested', data.totalInvested, '$');
+            animateValue('currentValue', data.currentValue, '$');
+            animateValue('totalGains', data.grossGains, data.grossGains >= 0 ? '+$' : '-$');
             
-            const taxes = calculateTaxes(grossGains, daysInvested);
-            const afterTaxValue = grossValue - taxes.totalTax;
-            const afterTaxGains = afterTaxValue - totalInvested;
+            document.getElementById('afterTaxValue').textContent = '$' + data.afterTaxValue.toLocaleString() + ' after tax';
+            document.getElementById('afterTaxGains').textContent = '+$' + data.afterTaxGains.toLocaleString() + ' after tax (' + data.effectiveTaxRate + '% tax rate)';
             
-            animateValue('totalInvested', totalInvested, '$');
-            animateValue('currentValue', grossValue, '$');
-            animateValue('totalGains', grossGains, grossGains >= 0 ? '+$' : '-$');
+            document.getElementById('progressFill').style.width = data.progressToGoal + '%';
             
-            document.getElementById('afterTaxValue').textContent = '$' + Math.round(afterTaxValue).toLocaleString() + ' after tax';
-            document.getElementById('afterTaxGains').textContent = '+$' + Math.round(afterTaxGains).toLocaleString() + ' after tax (' + Math.round(taxes.effectiveRate) + '% tax rate)';
+            const streakText = data.daysInvested === 0 ? 'Ready to start! 🚀' : 
+                               data.daysInvested >= 365 ? `${Math.floor(data.daysInvested / 365)} year streak! 🔥` : 
+                               `${data.daysInvested} day streak! 🔥`;
+            document.querySelector('.stat-card .stat-subtitle').textContent = streakText;
             
-            const progressPercent = Math.min((afterTaxValue / 2500) * 100, 100);
-            document.getElementById('progressFill').style.width = progressPercent + '%';
+            const remaining = Math.max(0, 2500 - data.afterTaxValue);
+            document.querySelector('.progress-text').textContent = data.note || 
+                (remaining > 0 ? `${Math.round(data.progressToGoal)}% to next milestone ($${remaining.toLocaleString()} remaining)` : 
+                'Milestone achieved! 🎉');
             
-            document.getElementById('updateTime').textContent = new Date().toLocaleString();
+            const updateTime = new Date(data.lastUpdated);
+            document.getElementById('updateTime').textContent = updateTime.toLocaleString();
         }
 
-        // Tab functionality
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', function() {
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -464,11 +463,8 @@
             });
         });
 
-        // Initialize and auto-refresh
         document.addEventListener('DOMContentLoaded', function() {
             updateStats();
-            
-            // Refresh every 5 minutes to catch new data
             setInterval(updateStats, 5 * 60 * 1000);
         });
     </script>
